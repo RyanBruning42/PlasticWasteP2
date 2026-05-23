@@ -126,16 +126,30 @@ gapminder_co2 <- co2 |>
 
 # Analyzing GDP and CO₂ Emissions
 
-## Row {height="150px"}
+## Row {height="200px"}
 
-### Population & GDP Dataa
+### Research Context {.tabset}
 
-***Population & GDP Data***
+#### Synopsis
+
+This dashboard combines Break Free From Plastic data with supplemental global economic and environmental indicators to explore relationships between wealth, pollution, and waste generation across countries. Using interactive visualizations and regression analysis, the dashboard investigates how GDP per capita relates to plastic waste generation and CO₂ emissions per capita during 2019–2020, while also examining how the COVID-19 pandemic may have altered these patterns. Population size is incorporated to provide additional context for differences across countries and regions.
+
+#### Research Questions
+
+1. What is the relationship between GDP per capita and plastic waste generation across countries in 2019-2020? Did the 2020 pandemic have the same effect on both?
+
+2. What is the relationship between GDP per capita and CO₂ emissions per capita across countries in 2019, and how does population size influence this relationship?
+
+###  Data Context {.tabset}
+
+#### Population & GDP Dataa
+
+***Population & GDP Data:***
 Through the World Bank Group's API, we collected population and GDP data for each country in our plastic waste data set for 2019 and 2020. The World Bank coordinates and compiles data from National Statistics Agencies, Central Banks, and Government Agencies into accessible APIs. Data are gathered via household surveys, digital records, censuses, and other secondary sources.
 
-###  CO₂ Emissions Data
+#### CO₂ Emissions
 
-***CO₂ Emissions Data ***
+***CO₂ Emissions Data:***
 Our final data set contains country-level CO₂ emissions published by *Our World in Data*, sourced from the Global Carbon Project and other scientific databases, spanning 1750–2024. We restricted it to 2019–2020 to match our other data. CO₂ estimates are derived by tracking a country's net fuel consumption (extracted + imported − exported) and multiplying each fuel type by its emission factor to compute total emissions.
 
 ## Row {height="600px"}
@@ -296,38 +310,37 @@ radioButtons("radio_trans", "Select Transformation",
 plotlyOutput("reac_bubble")
 ```
 
-<!-- #### GDP vs Plastic Waste Per Capita (2019 & 2020) -->
+#### Linear Regression Table
 
-<!-- ```{r} -->
-<!-- #| warning: false -->
-<!-- #| label: fig-rq1-facet -->
-<!-- #| fig-cap: "Relationship between GDP per capita and CO2 waste per capita across countries in 2019 and 2020, with separate panels for each year." -->
-<!-- #| fig-alt: "Faceted scatterplot showing GDP per capita versus CO2 waste per capita for countries in 2019 and 2020. Each panel includes a fitted trend line. The relationship appears positive in both years, allowing comparison of how the pattern changes between 2019 and 2020." -->
+```{r}
+#| content: card-sidebar
 
-<!-- ggplot( -->
-<!--   meta_set %>% -->
-<!--     filter(year %in% c(2019, 2020), parent_company == "Grand Total"), -->
-<!--   aes(x = gdp_per_capita, y = co2_per_capita) -->
-<!-- ) + -->
-<!--   geom_point(color = "#2C7FB8", alpha = 0.7, size = 2.5) + -->
-<!--   geom_smooth(method = "loess", se = FALSE, color = "#D95F0E", linewidth = 1) + -->
-<!--   scale_x_log10(labels = scales::label_dollar()) + -->
-<!--   scale_y_log10(labels = scales::label_number()) + -->
-<!--   facet_wrap(~year) + -->
-<!--   labs( -->
-<!--     title = "GDP per Capita vs CO2 Waste per Capita", -->
-<!--     subtitle = "Comparison of country-level relationships in 2019 and 2020", -->
-<!--     x = "GDP per Capita", -->
-<!--     y = "CO2 Waste per Capita" -->
-<!--   ) + -->
-<!--   theme_ft_rc() -->
-<!-- ``` -->
+selectInput("tab_x_variables", "Select X Variable", choices = c(
+    "GDP per Capita" = "gdp_per_capita",
+    "CO2 per Capita" = "co2_per_capita",
+    "Plastic Waste per Capita" = "plastic_waste_per_capita"))
+
+selectInput("tab_y_variables", "Select Y Variable",
+            choices = c(
+    "CO2 per Capita" = "co2_per_capita",
+    "GDP per Capita" = "gdp_per_capita",
+    "Plastic Waste per Capita" = "plastic_waste_per_capita"))
+```
+
+```{r}
+#| label: Linear Regression Table of Choosen Variables
+#| message: false
+#| warning: false
+
+tableOutput("reac_table")
+```
+
 
 # Inside look at Luxembourg
 
-### Why Luxembourg
-A country we found very interesting in this data was Luxembourg. We found it fascinating that the GDP per capita was the largest in our dataset (by a considerable margin) and it was also third in CO2 emissions per capita. Yet despite this the whole country has a population that hardly exceeds 600,000 people.
 
+### Why Luxembourg
+One country that stood out in our analysis was Luxembourg. Despite having a population of only around 600,000 people, Luxembourg reported the highest GDP per capita in our dataset by a substantial margin, reflecting its highly developed economy and strong financial sector. At the same time, it also ranked third in CO₂ emissions per capita. This contrast highlights how smaller, high-income countries can still have disproportionately large environmental impacts on a per-person basis, even when their total population is relatively small. Luxembourg serves as an interesting example of the complex relationship between economic prosperity, population size, and environmental sustainability.
 
 ### Luxembourg Map
 ```{r}
@@ -355,7 +368,7 @@ leaflet() |>
 
 ```
 
-
+##
 
 ### GDP vs CO₂ Per Capita Over Time (1970–2022)
 
@@ -533,5 +546,66 @@ output$reac_bubble <- renderPlotly({
 
   ggplotly(bubble_plot, tooltip = "text")
 })
+
+output$reac_table <- render_gt({
+  x_var <- input$tab_x_variables
+  y_var <- input$tab_y_variables
+  
+  model <- lm(
+  reformulate(
+    termlabels = paste0("log10(", y_var, ")"),
+    response = paste0("log10(", x_var, ")")
+  ),
+    data = model_data
+  )
+  
+  nice_labels <- c(
+    gdp_per_capita = "GDP per Capita",
+    co2_per_capita = "CO2 per Capita",
+    plastic_waste_per_capita = "Plastic Waste per Capita"
+  )
+  
+  x_label <- nice_labels[x_var]
+  y_label <- nice_labels[y_var]
+  
+  model_table <- summary(model)$coefficients %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("term") %>%
+  mutate(
+    term = recode(
+      term,
+      `(Intercept)` = "Intercept"
+    )
+  )
+
+  model_table %>%
+    gt() %>%
+    cols_label(
+      term = "Variable",
+      Estimate = "Estimate",
+      `Std. Error` = "Std. Error",
+      `t value` = "t-value",
+      `Pr(>|t|)` = "p-value"
+    ) %>%
+    fmt_number(
+      columns = c(Estimate, `Std. Error`, `t value`, `Pr(>|t|)`),
+      decimals = 4
+    ) %>%
+    tab_style(
+      style = cell_text(weight = "bold"),
+      locations = cells_column_labels()
+    ) %>%
+    tab_header(
+      title = md(
+        paste0("**Regression Results: ",
+               y_label,
+               " predicted by ",
+               x_label,
+               "**")
+      ),
+      subtitle = md("Log-log linear model using 2019 country-level data")
+    ) 
+})
 ```
+
 
