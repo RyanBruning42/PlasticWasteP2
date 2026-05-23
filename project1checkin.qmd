@@ -26,6 +26,7 @@ library(tidyjson)
 library(glue)
 library(countrycode)
 library(gt)
+library(DT)
 library(hrbrthemes)
 library(viridis)
 library(hexbin)
@@ -47,43 +48,12 @@ plastics <- plastics %>%
 iso2_list <- unique(plastics$iso2)
 iso2_list <- iso2_list[iso2_list != "TW"]
 
-# GDP API function
-get_gdp <- function(iso2) {
-  url <- glue("https://api.worldbank.org/v2/country/{iso2}/indicator/NY.GDP.MKTP.CD?format=json")
-  my_data <- fromJSON(url)
-  if (is.null(my_data[[2]])) {
-    return(NULL)
-  } else {
-    return(my_data[[2]] %>%
-             filter(date %in% c("2019", "2020")) %>%
-             select(date, value) %>%
-             mutate(iso2c = iso2, value = value / 1e9) %>%
-             rename(gdp_billions = value))
-  }
-}
+# Load pre-fetched GDP and population data (from World Bank API)
+gdp_data <- readr::read_csv("gdp_data.csv")
+population_data <- readr::read_csv("population_data.csv")
 
-gdp_data <- map_dfr(iso2_list, get_gdp)
-Sys.sleep(1)
-
-# Population API function
-get_population <- function(iso2) {
-  url <- glue("https://api.worldbank.org/v2/country/{iso2}/indicator/SP.POP.TOTL?format=json")
-  my_data <- fromJSON(url)
-  if (is.null(my_data[[2]])) {
-    return(NULL)
-  } else {
-    return(my_data[[2]] %>%
-             filter(date %in% c("2019", "2020")) %>%
-             select(date, value) %>%
-             mutate(iso2c = iso2))
-  }
-}
-
-population_data <- map_dfr(iso2_list, get_population)
-
-# Load CO2 data
-co2 <- readr::read_csv(
-  "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv")
+# Load CO2 data from local file
+co2 <- readr::read_csv("owid-co2-data.csv")
 
 # Build combined meta dataset
 co2_sm <- co2 %>%
@@ -158,21 +128,21 @@ gapminder_co2 <- co2 |>
 
 ## Row {height="150px"}
 
-### 🌍 Population & GDP Dataa
+### Population & GDP Dataa
 
-***🌍 Population & GDP Data***
+***Population & GDP Data***
 Through the World Bank Group's API, we collected population and GDP data for each country in our plastic waste data set for 2019 and 2020. The World Bank coordinates and compiles data from National Statistics Agencies, Central Banks, and Government Agencies into accessible APIs. Data are gathered via household surveys, digital records, censuses, and other secondary sources.
 
-### 🏭 CO₂ Emissions Data
+###  CO₂ Emissions Data
 
-***🏭 CO₂ Emissions Data***
+***CO₂ Emissions Data ***
 Our final data set contains country-level CO₂ emissions published by *Our World in Data*, sourced from the Global Carbon Project and other scientific databases, spanning 1750–2024. We restricted it to 2019–2020 to match our other data. CO₂ estimates are derived by tracking a country's net fuel consumption (extracted + imported − exported) and multiplying each fuel type by its emission factor to compute total emissions.
 
 ## Row {height="600px"}
 
-### 📋 Data Summaries {.tabset}
+### Data Summaries {.tabset}
 
-#### 🌍 GDP & CO₂ by Population
+#### GDP & CO₂ by Population
 
 
 ```{r}
@@ -228,12 +198,11 @@ gdp_co2_table |>
   )
 ```
 
-#### 📈 GDP & CO₂ Rankings
+#### GDP & CO₂ Rankings
 
 
 ```{r}
 #| title: Does there appear to be a relationship between the rank of a country's GDP per capita and their CO₂ per capita?
-
 
 countries <- meta_set |>
   filter(
@@ -256,67 +225,46 @@ ranked_table <- map_dfr(countries, function(c) {
   filter(!is.na(gdp_per_capita), !is.na(co2_per_capita)) |>
   mutate(
     gdp_rank = min_rank(desc(gdp_per_capita)),
-    co2_rank = min_rank(desc(co2_per_capita))
+    co2_rank = min_rank(desc(co2_per_capita)),
+    gdp_per_capita = round(gdp_per_capita, 0),
+    co2_per_capita = round(co2_per_capita, 2)
   ) |>
-  arrange(gdp_rank)
+  arrange(gdp_rank) |>
+  rename(
+    Country        = country,
+    `GDP Per Capita ($)` = gdp_per_capita,
+    `CO₂ Per Capita`     = co2_per_capita,
+    `GDP Rank`           = gdp_rank,
+    `CO₂ Rank`           = co2_rank
+  )
 
-ranked_table |>
-  slice_head(n = 10) |>
-  gt() |>
-  cols_label(
-    country = "Country",
-    gdp_per_capita = "GDP Per Capita",
-    co2_per_capita = "CO₂ Per Capita",
-    gdp_rank = "GDP Rank",
-    co2_rank = "CO₂ Rank"
-  ) |>
-  fmt_currency(
-    columns = contains("gdp"),
-    currency = "USD",
-    decimals = 0
-  ) |>
-  fmt_number(
-    columns = c(co2_per_capita),
-    decimals = 2,
-    use_seps = TRUE
-  ) |>
-  fmt_number(
-    columns = c(gdp_rank, co2_rank),
-    decimals = 0
-  ) |>
-  tab_spanner(
-    label = "Per-Capita Measures",
-    columns = c(gdp_per_capita, co2_per_capita)
-  ) |>
-  tab_spanner(
-    label = "Global Rankings",
-    columns = c(gdp_rank, co2_rank)
-  ) |>
-  data_color(
-    columns = c(gdp_rank, co2_rank),
-    fn = scales::col_numeric(
-      palette = c("#DCEAF7", "#2C7FB8"),
-      domain = c(1, 30)
-    )
-  ) |>
-  tab_header(
-    title = md("**GDP and CO₂ Per-Capita Ranking Comparison**"),
-    subtitle = "Top 10 countries ranked by GDP per capita in 2019"
-  ) |>
-  tab_caption(
-    "Table 6. Comparison of country rankings for GDP per capita and CO₂ emissions per capita in 2019."
-  ) |>
-  tab_style(
-    style = cell_text(weight = "bold"),
-    locations = cells_column_labels()
+datatable(
+  ranked_table,
+  caption   = "GDP and CO₂ Per-Capita Ranking Comparison (2019)",
+  rownames  = FALSE,
+  filter    = "top",
+  options   = list(
+    pageLength = 50,
+    order      = list(list(3, "asc")),
+    dom        = "ftip"
+  )
+) |>
+  formatCurrency("GDP Per Capita ($)", currency = "$", digits = 0) |>
+  formatRound("CO₂ Per Capita", digits = 2) |>
+  formatStyle(
+    c("GDP Rank", "CO₂ Rank"),
+    background = styleColorBar(c(1, max(ranked_table$`CO₂ Rank`)), "#DCEAF7"),
+    backgroundSize = "100% 90%",
+    backgroundRepeat = "no-repeat",
+    backgroundPosition = "center"
   )
 ```
 
 
 
-### 📊 Visualizations {.tabset}
+### Visualizations {.tabset}
 
-#### 🫧 Interactive Bubble Plot
+#### Interactive Bubble Plot
 
 ```{r}
 #| content: card-sidebar
@@ -348,7 +296,7 @@ radioButtons("radio_trans", "Select Transformation",
 plotlyOutput("reac_bubble")
 ```
 
-<!-- #### 📊 GDP vs Plastic Waste Per Capita (2019 & 2020) -->
+<!-- #### GDP vs Plastic Waste Per Capita (2019 & 2020) -->
 
 <!-- ```{r} -->
 <!-- #| warning: false -->
@@ -415,6 +363,14 @@ leaflet() |>
 #| label: fig-gapminder-animated
 #| warning: false
 
+plotlyOutput("gapminder_anim", height = "650px")
+```
+
+```{r}
+#| context: server
+#| message: false
+#| warning: false
+
 highlight_countries <- c("Luxembourg", "United States", "China", "India",
                          "Germany", "Japan", "United Kingdom", "Brazil")
 
@@ -434,70 +390,66 @@ hl_data <- gapminder_co2 |>
   filter(country %in% highlight_countries) |>
   mutate(lux_label = ifelse(country == "Luxembourg", "Luxembourg", ""))
 
-plot_ly() |>
-  add_trace(
-    data      = bg_data,
-    x         = ~gdp_per_capita,
-    y         = ~co2_per_capita,
-    size      = ~population,
-    frame     = ~year,
-    type      = "scatter",
-    mode      = "markers",
-    name      = "Other countries",
-    hoverinfo = "text",
-    text      = ~paste0("<b>", country, "</b><br>",
-                        "GDP/cap: $", scales::comma(round(gdp_per_capita)), "<br>",
-                        "CO₂/cap: ", round(co2_per_capita, 2), " t"),
-    marker    = list(color = "rgba(200,200,200,0.25)",
-                     sizemode = "diameter",
-                     line = list(color = "rgba(150,150,150,0.1)", width = 0.5))
-  ) |>
-  add_trace(
-    data         = hl_data,
-    x            = ~gdp_per_capita,
-    y            = ~co2_per_capita,
-    size         = ~population,
-    color        = ~country,
-    colors       = highlight_colors,
-    frame        = ~year,
-    type         = "scatter",
-    mode         = "markers+text",
-    text         = ~lux_label,
-    textposition = "top right",
-    hovertemplate = "%{customdata}<extra></extra>",
-    customdata   = ~paste0("<b>", country, "</b><br>",
-                           "GDP/cap: $", scales::comma(round(gdp_per_capita)), "<br>",
-                           "CO₂/cap: ", round(co2_per_capita, 2), " t<br>",
-                           "Pop: ", scales::comma(round(population / 1e6, 1)), "M"),
-    marker = list(sizemode = "diameter", opacity = 0.85,
-                  line = list(color = "white", width = 1.5))
-  ) |>
-  layout(
-    xaxis  = list(
-      title      = "GDP per Capita (USD, PPP)",
-      type       = "log",
-      tickvals   = c(500, 1000, 2000, 5000, 10000, 20000, 50000, 100000),
-      ticktext   = c("$500", "$1K", "$2K", "$5K", "$10K", "$20K", "$50K", "$100K"),
-      tickfont   = list(size = 11),
-      titlefont  = list(size = 13),
-      gridcolor  = "rgba(200,200,200,0.5)"
-    ),
-    yaxis  = list(title = "CO₂ per Capita (tonnes)", type = "log"),
-    title  = list(text = "GDP per Capita vs CO₂ per Capita (1970–2022)",
-                  font = list(size = 15)),
-    legend = list(title = list(text = "Country")),
-    paper_bgcolor = "white",
-    plot_bgcolor  = "#f5f5f5",
-    height        = 650
-  ) |>
-  animation_opts(frame = 700, easing = "linear", redraw = FALSE) |>
-  animation_slider(currentvalue = list(prefix = "Year: "))
-```
-
-```{r}
-#| context: server
-#| message: false
-#| warning: false 
+output$gapminder_anim <- renderPlotly({
+  plot_ly() |>
+    add_trace(
+      data      = bg_data,
+      x         = ~gdp_per_capita,
+      y         = ~co2_per_capita,
+      size      = ~population,
+      frame     = ~year,
+      type      = "scatter",
+      mode      = "markers",
+      name      = "Other countries",
+      hoverinfo = "text",
+      text      = ~paste0("<b>", country, "</b><br>",
+                          "GDP/cap: $", scales::comma(round(gdp_per_capita)), "<br>",
+                          "CO₂/cap: ", round(co2_per_capita, 2), " t"),
+      marker    = list(color = "rgba(200,200,200,0.25)",
+                       sizemode = "diameter",
+                       line = list(color = "rgba(150,150,150,0.1)", width = 0.5))
+    ) |>
+    add_trace(
+      data          = hl_data,
+      x             = ~gdp_per_capita,
+      y             = ~co2_per_capita,
+      size          = ~population,
+      color         = ~country,
+      colors        = highlight_colors,
+      frame         = ~year,
+      type          = "scatter",
+      mode          = "markers+text",
+      text          = ~lux_label,
+      textposition  = "top right",
+      hovertemplate = "%{customdata}<extra></extra>",
+      customdata    = ~paste0("<b>", country, "</b><br>",
+                              "GDP/cap: $", scales::comma(round(gdp_per_capita)), "<br>",
+                              "CO₂/cap: ", round(co2_per_capita, 2), " t<br>",
+                              "Pop: ", scales::comma(round(population / 1e6, 1)), "M"),
+      marker = list(sizemode = "diameter", opacity = 0.85,
+                    line = list(color = "white", width = 1.5))
+    ) |>
+    layout(
+      xaxis  = list(
+        title     = "GDP per Capita (USD, PPP)",
+        type      = "log",
+        tickvals  = c(500, 1000, 2000, 5000, 10000, 20000, 50000, 100000),
+        ticktext  = c("$500", "$1K", "$2K", "$5K", "$10K", "$20K", "$50K", "$100K"),
+        tickfont  = list(size = 11),
+        titlefont = list(size = 13),
+        gridcolor = "rgba(200,200,200,0.5)"
+      ),
+      yaxis        = list(title = "CO₂ per Capita (tonnes)", type = "log"),
+      title        = list(text = "GDP per Capita vs CO₂ per Capita (1970–2022)",
+                          font = list(size = 15)),
+      legend       = list(title = list(text = "Country")),
+      paper_bgcolor = "white",
+      plot_bgcolor  = "#f5f5f5",
+      height        = 650
+    ) |>
+    animation_opts(frame = 700, easing = "linear", redraw = FALSE) |>
+    animation_slider(currentvalue = list(prefix = "Year: "))
+})
 
 output$reac_bubble <- renderPlotly({
   x_var <- input$x_variables
