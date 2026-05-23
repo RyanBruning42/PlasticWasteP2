@@ -142,7 +142,7 @@ This dashboard combines Break Free From Plastic data with supplemental global ec
 
 ###  Data Context {.tabset}
 
-#### Population & GDP Dataa
+#### Population & GDP Data
 
 ***Population & GDP Data:***
 Through the World Bank Group's API, we collected population and GDP data for each country in our plastic waste data set for 2019 and 2020. The World Bank coordinates and compiles data from National Statistics Agencies, Central Banks, and Government Agencies into accessible APIs. Data are gathered via household surveys, digital records, censuses, and other secondary sources.
